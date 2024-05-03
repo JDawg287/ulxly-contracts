@@ -56,6 +56,14 @@ contract DepositContractBase {
         return node;
     }
 
+    function getBranch()
+        public
+        view
+        returns (bytes32[_DEPOSIT_CONTRACT_TREE_DEPTH] memory)
+    {
+        return _branch;
+    }
+
     /**
      * @notice Add a new leaf to the merkle tree
      * @param leaf Leaf
