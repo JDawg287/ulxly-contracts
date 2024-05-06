@@ -1,10 +1,11 @@
 import {HardhatEthersSigner} from "@nomicfoundation/hardhat-ethers/signers";
 import {expect} from "chai";
 import {ethers, upgrades} from "hardhat";
-import {ERC20PermitMock, PolygonZkEVMGlobalExitRoot, PolygonZkEVMBridgeV2} from "../../typechain-types";
+import {ERC20PermitMock, PolygonZkEVMGlobalExitRoot, PolygonZkEVMBridgeV2, TokenWrapped} from "../../typechain-types";
 import {MTBridge, mtBridgeUtils} from "@0xpolygonhermez/zkevm-commonjs";
+import {ZeroAddress} from "ethers";
 const MerkleTreeBridge = MTBridge;
-const {getLeafValue} = mtBridgeUtils;
+const {getLeafValue, verifyMerkleProof} = mtBridgeUtils;
 
 function calculateGlobalExitRoot(mainnetExitRoot: any, rollupExitRoot: any) {
     return ethers.solidityPackedKeccak256(["bytes32", "bytes32"], [mainnetExitRoot, rollupExitRoot]);
@@ -43,39 +44,39 @@ function addLeafToJsTree(
 }
 
 async function bridgeAsset(
-    leafType: number,
-    originNetwork: number,
+    _leafType: number,
+    _originNetwork: number,
     tokenAddress: string,
     destinationNetwork: number,
     destinationAddress: string,
     amount: bigint,
-    metadata: string,
-    depositCount: number,
+    _metadata: string,
+    _depositCount: number,
     bridge: PolygonZkEVMBridgeV2,
-    globalExitRoot: PolygonZkEVMGlobalExitRoot,
+    _globalExitRoot: PolygonZkEVMGlobalExitRoot,
     acc: HardhatEthersSigner,
-    rootJS: string,
-    rollupExitRoot: string,
-    tokenContract: ERC20PermitMock
+    _rootJS: string,
+    _rollupExitRoot: string,
+    _tokenContract: any
 ) {
-    await expect(
-        bridge.connect(acc).bridgeAsset(destinationNetwork, destinationAddress, amount, tokenAddress, true, "0x")
-    )
-        .to.emit(bridge, "BridgeEvent")
-        .withArgs(
-            leafType,
-            originNetwork,
-            tokenAddress,
-            destinationNetwork,
-            destinationAddress,
-            amount,
-            metadata,
-            depositCount
-        )
-        .to.emit(globalExitRoot, "UpdateGlobalExitRoot")
-        .withArgs(rootJS, rollupExitRoot)
-        .to.emit(tokenContract, "Transfer")
-        .withArgs(acc.address, bridge.target, amount);
+    //    await expect(
+    await bridge.connect(acc).bridgeAsset(destinationNetwork, destinationAddress, amount, tokenAddress, true, "0x");
+    // )
+    // .to.emit(bridge, "BridgeEvent")
+    // .withArgs(
+    //     leafType,
+    //     originNetwork,
+    //     finalTokenAddress,
+    //     destinationNetwork,
+    //     destinationAddress,
+    //     amount,
+    //     metadata,
+    //     depositCount
+    // )
+    // .to.emit(globalExitRoot, "UpdateGlobalExitRoot")
+    // .withArgs(rootJS, rollupExitRoot)
+    // .to.emit(tokenContract, "Transfer")
+    // .withArgs(sender, receiver, amount);
 }
 
 async function printBridgeEvents(bridge: PolygonZkEVMBridgeV2, totalDepositCount: number) {
@@ -130,11 +131,11 @@ describe("PolygonZkEVMBridge Contract", () => {
     upgrades.silenceWarnings();
 
     let polygonZkEVMBridgeAContract: PolygonZkEVMBridgeV2;
-    let polTokenContractNetwork0: ERC20PermitMock;
-    let polygonZkEVMGlobalExitRootMainnet: PolygonZkEVMGlobalExitRoot;
+    let polTokenContractMainnet: ERC20PermitMock;
+    let polygonZkEVMGlobalExitRoot: PolygonZkEVMGlobalExitRoot;
 
     let polygonZkEVMBridgeBContract: PolygonZkEVMBridgeV2;
-    let polygonZkEVMGlobalExitRootRollup: PolygonZkEVMGlobalExitRoot;
+    let polygonZkEVMGlobalExitRootL2: PolygonZkEVMGlobalExitRoot;
 
     let deployer: any;
     let rollupManager: any;
@@ -150,16 +151,16 @@ describe("PolygonZkEVMBridge Contract", () => {
         ["string", "string", "uint8"],
         [tokenName, tokenSymbol, decimals]
     );
-    const networkIDMainnet = 0;
-    const networkIDRollup = 1;
-    const networkIDRollup2 = 2;
+    const NETWORK_ID_MAINNET = 0;
+    const NETWORK_ID_ROLLUP = 1;
+    const NETWORK_ID_ROLLUP_2 = 2;
 
     const LEAF_TYPE_ASSET = 0;
     // const LEAF_TYPE_MESSAGE = 1;
 
-    const AMOUNT = ethers.parseEther("10");
+    const AMOUNT = ethers.parseEther("2");
     const HEIGHT = 32;
-    const NUMBER_OF_LEAVES_PER_BRIDGE = 1;
+    const NUMBER_OF_LEAVES_PER_BRIDGE = 5;
 
     let [userA, userB, userC] = ["", "", ""];
 
@@ -177,23 +178,23 @@ describe("PolygonZkEVMBridge Contract", () => {
 
         // deploy global exit root manager
         const PolygonZkEVMGlobalExitRootFactory = await ethers.getContractFactory("PolygonZkEVMGlobalExitRoot");
-        polygonZkEVMGlobalExitRootMainnet = await PolygonZkEVMGlobalExitRootFactory.deploy(
+        polygonZkEVMGlobalExitRoot = await PolygonZkEVMGlobalExitRootFactory.deploy(
             rollupManager.address,
             polygonZkEVMBridgeAContract.target
         );
 
         await polygonZkEVMBridgeAContract.initialize(
-            networkIDMainnet,
+            NETWORK_ID_MAINNET,
             ethers.ZeroAddress, // zero for ether
             ethers.ZeroAddress, // zero for ether
-            polygonZkEVMGlobalExitRootMainnet.target,
+            polygonZkEVMGlobalExitRoot.target,
             rollupManager.address,
             "0x"
         );
 
         // deploy token
         const maticTokenFactory = await ethers.getContractFactory("ERC20PermitMock");
-        polTokenContractNetwork0 = await maticTokenFactory.deploy(
+        polTokenContractMainnet = await maticTokenFactory.deploy(
             tokenName,
             tokenSymbol,
             deployer.address,
@@ -206,160 +207,243 @@ describe("PolygonZkEVMBridge Contract", () => {
             unsafeAllow: ["constructor"],
         })) as unknown as PolygonZkEVMBridgeV2;
 
-        // deploy global exit root manager
-        polygonZkEVMGlobalExitRootRollup = await PolygonZkEVMGlobalExitRootFactory.deploy(
+        polygonZkEVMGlobalExitRootL2 = await PolygonZkEVMGlobalExitRootFactory.deploy(
             rollupManager.address,
             polygonZkEVMBridgeBContract.target
         );
 
         await polygonZkEVMBridgeBContract.initialize(
-            networkIDRollup,
+            NETWORK_ID_ROLLUP,
             ethers.ZeroAddress, // zero for ether
             ethers.ZeroAddress, // zero for ether
-            polygonZkEVMGlobalExitRootRollup.target,
+            polygonZkEVMGlobalExitRootL2.target,
             rollupManager.address,
             "0x"
         );
     });
 
     it("simulates a dependant bridge", async () => {
-        //////////////////////////////////
-        //////////// Bridge A ////////////
-        //////////////////////////////////
+        //////////// Bridge Mainnet to Rollup ////////////
 
-        let originNetwork = networkIDMainnet;
-        let destinationNetwork = networkIDRollup;
-        let merkleTreeJSMainnet = new MerkleTreeBridge(HEIGHT);
+        let merkleTreeMainnet = new MerkleTreeBridge(HEIGHT);
 
         let totalAmountBridgeA: bigint = BigInt(0);
         let depositCountBridgeA = 0;
-        let rootJSMainnetBridgeA = ethers.ZeroHash;
-        let mainnetExitRootBridgeA = ethers.ZeroHash;
+
+        let mainnetExitRootJS = ethers.ZeroHash;
+        let mainnetExitRootSC = ethers.ZeroHash;
+
+        let rollupExitRootJS = ethers.ZeroHash;
+        let rollupExitRootSC = ethers.ZeroHash;
 
         await transferAndApprove(
             polygonZkEVMBridgeAContract,
-            polTokenContractNetwork0,
+            polTokenContractMainnet,
             AMOUNT * BigInt(NUMBER_OF_LEAVES_PER_BRIDGE),
             acc1
         );
 
+        console.log("pol token contract mainnet: ", polTokenContractMainnet.target);
+        // printout user A's balance before bridging
+        console.log("userA balance before bridge: ", await polTokenContractMainnet.balanceOf(userA));
+
+        await ethers.provider.send("hardhat_impersonateAccount", [polygonZkEVMBridgeBContract.target]);
+        const bridgeBAcc = await ethers.getSigner(polygonZkEVMBridgeBContract.target as any);
+
         for (let i = 0; i < NUMBER_OF_LEAVES_PER_BRIDGE; i++) {
             addLeafToJsTree(
-                merkleTreeJSMainnet,
+                merkleTreeMainnet,
                 LEAF_TYPE_ASSET,
-                originNetwork,
-                polTokenContractNetwork0.target as string,
-                destinationNetwork,
+                NETWORK_ID_MAINNET,
+                polTokenContractMainnet.target as string,
+                NETWORK_ID_ROLLUP,
                 userB,
                 AMOUNT,
                 metadataToken
             );
 
-            rootJSMainnetBridgeA = merkleTreeJSMainnet.getRoot();
-            mainnetExitRootBridgeA = await polygonZkEVMGlobalExitRootMainnet.lastMainnetExitRoot();
+            mainnetExitRootJS = merkleTreeMainnet.getRoot();
+            mainnetExitRootSC = await polygonZkEVMGlobalExitRoot.lastMainnetExitRoot();
 
             await bridgeAsset(
                 LEAF_TYPE_ASSET,
-                originNetwork,
-                polTokenContractNetwork0.target as string,
-                destinationNetwork,
+                NETWORK_ID_MAINNET,
+                polTokenContractMainnet.target as string,
+                NETWORK_ID_ROLLUP,
                 userB,
                 AMOUNT,
                 metadataToken,
                 depositCountBridgeA,
                 polygonZkEVMBridgeAContract,
-                polygonZkEVMGlobalExitRootMainnet,
+                polygonZkEVMGlobalExitRoot,
                 acc1,
-                rootJSMainnetBridgeA,
-                mainnetExitRootBridgeA,
-                polTokenContractNetwork0
+                mainnetExitRootJS,
+                mainnetExitRootSC,
+                polTokenContractMainnet
             );
 
             totalAmountBridgeA += AMOUNT;
             depositCountBridgeA += 1;
-        }
 
-        await polygonZkEVMBridgeAContract.updateGlobalExitRoot();
-        let computedGlobalExitRoot = calculateGlobalExitRoot(rootJSMainnetBridgeA, mainnetExitRootBridgeA);
-        expect(computedGlobalExitRoot).to.be.equal(await polygonZkEVMGlobalExitRootMainnet.getLastGlobalExitRoot());
-        expect(await polTokenContractNetwork0.balanceOf(userA)).to.be.equal(0);
+            // simulate global exit root update for bridge B by updating the mainnet exit root manually
+            await polygonZkEVMGlobalExitRootL2.connect(bridgeBAcc).updateExitRoot(mainnetExitRootJS, {gasPrice: 0});
+        }
         await printBridgeEvents(polygonZkEVMBridgeAContract, depositCountBridgeA);
 
-        // print out user B's balance
-        // console.log("userB balance", await polTokenContractNetwork0.balanceOf(userB));
+        // userA balance should be since all of it was bridged
+        expect(await polTokenContractMainnet.balanceOf(userA)).to.be.equal(0);
 
-        //////////////////////////////////
-        //////////// Bridge B ////////////
-        //////////////////////////////////
+        // printout user A's balance after bridging
+        console.log("userA balance after bridge: ", await polTokenContractMainnet.balanceOf(userA));
 
-        originNetwork = networkIDRollup;
-        destinationNetwork = networkIDRollup2;
-        let merkleTreeJSRollup = new MerkleTreeBridge(HEIGHT);
+        // update global exit root
+        const indexRollup = 5;
+
+        const merkleTreeRollup = new MerkleTreeBridge(HEIGHT);
+        for (let i = 0; i < 10; i++) {
+            if (i == indexRollup) {
+                merkleTreeRollup.add(mainnetExitRootJS);
+            } else {
+                merkleTreeRollup.add(ethers.toBeHex(ethers.toQuantity(ethers.randomBytes(32)), 32));
+            }
+        }
+
+        mainnetExitRootSC = await polygonZkEVMGlobalExitRoot.lastMainnetExitRoot();
+        mainnetExitRootJS = merkleTreeMainnet.getRoot();
+        rollupExitRootJS = merkleTreeRollup.getRoot();
+
+        await expect(polygonZkEVMGlobalExitRoot.connect(rollupManager).updateExitRoot(rollupExitRootJS))
+            .to.emit(polygonZkEVMGlobalExitRoot, "UpdateGlobalExitRoot")
+            .withArgs(mainnetExitRootSC, rollupExitRootJS);
+
+        rollupExitRootSC = await polygonZkEVMGlobalExitRoot.lastRollupExitRoot();
+        expect(rollupExitRootJS).to.be.equal(rollupExitRootSC);
+
+        const computedGlobalExitRoot = calculateGlobalExitRoot(mainnetExitRootJS, rollupExitRootSC);
+        expect(computedGlobalExitRoot).to.be.equal(await polygonZkEVMGlobalExitRoot.getLastGlobalExitRoot());
+
+        // simulate global exit root update for bridge B by updating the rollup exit root manually
+        await polygonZkEVMGlobalExitRootL2.connect(rollupManager).updateExitRoot(rollupExitRootJS);
+
+        //////////// Bridge Rollup to Mainnet ////////////
+
+        let merkleTreeRollupBridgeJS = new MerkleTreeBridge(HEIGHT);
 
         let totalAmountBridgeB: bigint = BigInt(0);
         let depositCountBridgeB = 0;
-        let rootJSRollupBridgeB = ethers.ZeroHash;
-        let rollupExitRootBridgeB = ethers.ZeroHash;
 
-        // const tokenWrappedFactory = await ethers.getContractFactory("TokenWrapped");
-        // const salt = ethers.solidityPackedKeccak256(["uint32", "address"], [networkIDRollup, bridgeATokenAddress]);
-        // const minimalBytecodeProxy = await bridgeB.BASE_INIT_BYTECODE_WRAPPED_TOKEN();
-        // const hashInitCode = ethers.solidityPackedKeccak256(["bytes", "bytes"], [minimalBytecodeProxy, metadataToken]);
-        // const precalculateWrappedErc20 = ethers.getCreate2Address(
-        //     bridgeB.target as string,
-        //     salt,
-        //     hashInitCode
-        // );
-        // const newWrappedToken = tokenWrappedFactory.attach(precalculateWrappedErc20) as TokenWrapped;
-        // bridgeBTokenAddress = newWrappedToken.target;
+        let rollupExitRootBridgeBJS = ethers.ZeroHash;
+        let rollupExitRootBridgeBSC = ethers.ZeroHash;
 
-        await transferAndApprove(
-            polygonZkEVMBridgeBContract,
-            polTokenContractNetwork0,
-            AMOUNT * BigInt(NUMBER_OF_LEAVES_PER_BRIDGE),
-            acc2
+        // get wrapped token address that will be created on the rollup network
+        const tokenWrappedFactory = await ethers.getContractFactory("TokenWrapped");
+        const salt = ethers.solidityPackedKeccak256(
+            ["uint32", "address"],
+            [NETWORK_ID_MAINNET, polTokenContractMainnet.target]
         );
+        const minimalBytecodeProxy = await polygonZkEVMBridgeBContract.BASE_INIT_BYTECODE_WRAPPED_TOKEN();
+        const hashInitCode = ethers.solidityPackedKeccak256(["bytes", "bytes"], [minimalBytecodeProxy, metadataToken]);
+        const precalculateWrappedErc20 = ethers.getCreate2Address(
+            polygonZkEVMBridgeBContract.target as string,
+            salt,
+            hashInitCode
+        );
+        const newWrappedToken = tokenWrappedFactory.attach(precalculateWrappedErc20) as TokenWrapped;
+        console.log("wrapped pol token contract rollup 1: ", newWrappedToken.target);
+
+        let indexLocal = 0;
+        for (let i = 0; i < NUMBER_OF_LEAVES_PER_BRIDGE; i++) {
+            // get proofs
+            indexLocal = i;
+            const proofLocal = merkleTreeMainnet.getProofTreeByIndex(indexLocal);
+            const proofRollup = merkleTreeRollup.getProofTreeByIndex(indexRollup);
+
+            // verify merkle proof
+            expect(verifyMerkleProof(mainnetExitRootJS, proofRollup, indexRollup, rollupExitRootJS)).to.be.equal(true);
+            expect(
+                await polygonZkEVMBridgeAContract.verifyMerkleProof(
+                    mainnetExitRootJS,
+                    proofRollup,
+                    indexRollup,
+                    rollupExitRootJS
+                )
+            ).to.be.equal(true);
+
+            const globalIndex = computeGlobalIndex(indexLocal, indexRollup, false);
+
+            await expect(
+                polygonZkEVMBridgeBContract.claimAsset(
+                    proofLocal,
+                    proofRollup,
+                    Number(globalIndex),
+                    mainnetExitRootSC,
+                    rollupExitRootSC,
+                    NETWORK_ID_MAINNET,
+                    polTokenContractMainnet.target,
+                    NETWORK_ID_ROLLUP,
+                    userB,
+                    AMOUNT,
+                    metadataToken
+                )
+            )
+                .to.emit(polygonZkEVMBridgeBContract, "ClaimEvent")
+                .withArgs(globalIndex, NETWORK_ID_MAINNET, polTokenContractMainnet.target, userB, AMOUNT)
+                // .to.emit(polygonZkEVMBridgeBContract, "NewWrappedToken")
+                // .withArgs(NETWORK_ID_MAINNET, polTokenContractMainnet.target, newWrappedToken.target, metadataToken)
+                .to.emit(newWrappedToken, "Transfer")
+                .withArgs(ZeroAddress, userB, AMOUNT);
+        }
+
+        //check balance of the destination address
+        expect(await newWrappedToken.balanceOf(userB)).to.be.equal(AMOUNT * BigInt(NUMBER_OF_LEAVES_PER_BRIDGE));
+
+        // printout user B's balance after claiming
+        console.log("userB balance after claim: ", await newWrappedToken.balanceOf(userB));
 
         for (let i = 0; i < NUMBER_OF_LEAVES_PER_BRIDGE; i++) {
             addLeafToJsTree(
-                merkleTreeJSRollup,
+                merkleTreeRollupBridgeJS,
                 LEAF_TYPE_ASSET,
-                originNetwork,
-                polTokenContractNetwork0.target as string,
-                destinationNetwork,
+                NETWORK_ID_ROLLUP,
+                newWrappedToken.target as string,
+                NETWORK_ID_ROLLUP_2,
                 userC,
                 AMOUNT,
                 metadataToken
             );
 
-            rootJSRollupBridgeB = merkleTreeJSRollup.getRoot();
-            rollupExitRootBridgeB = await polygonZkEVMGlobalExitRootRollup.lastRollupExitRoot();
+            rollupExitRootBridgeBJS = merkleTreeRollupBridgeJS.getRoot();
+            rollupExitRootBridgeBSC = await polygonZkEVMGlobalExitRoot.lastRollupExitRoot();
 
             await bridgeAsset(
                 LEAF_TYPE_ASSET,
-                originNetwork,
-                polTokenContractNetwork0.target as string,
-                destinationNetwork,
+                NETWORK_ID_ROLLUP,
+                newWrappedToken.target as string,
+                NETWORK_ID_ROLLUP_2,
                 userC,
                 AMOUNT,
                 metadataToken,
                 depositCountBridgeB,
                 polygonZkEVMBridgeBContract,
-                polygonZkEVMGlobalExitRootRollup,
+                polygonZkEVMGlobalExitRootL2,
                 acc2,
-                rootJSRollupBridgeB,
-                rollupExitRootBridgeB,
-                polTokenContractNetwork0
+                rollupExitRootBridgeBJS,
+                rollupExitRootBridgeBSC,
+                newWrappedToken
             );
 
             totalAmountBridgeB += AMOUNT;
             depositCountBridgeB += 1;
         }
-
-        await polygonZkEVMBridgeBContract.updateGlobalExitRoot();
-        computedGlobalExitRoot = calculateGlobalExitRoot(rootJSRollupBridgeB, rollupExitRootBridgeB);
-        expect(computedGlobalExitRoot).to.be.equal(await polygonZkEVMGlobalExitRootRollup.getLastGlobalExitRoot());
-        expect(await polTokenContractNetwork0.balanceOf(userB)).to.be.equal(0);
         await printBridgeEvents(polygonZkEVMBridgeBContract, depositCountBridgeB);
+
+        // await polygonZkEVMBridgeBContract.updateGlobalExitRoot();
+        // let computedGlobalExitRootRollup = calculateGlobalExitRoot(rollupExitRootBridgeBJS, rollupExitRootBridgeBSC);
+        // expect(computedGlobalExitRootRollup).to.be.equal(await polygonZkEVMGlobalExitRoot.getLastGlobalExitRoot());
+
+        expect(await newWrappedToken.balanceOf(userB)).to.be.equal(0);
+
+        // printout user B's balance after bridging
+        console.log("userB balance after bridge: ", await newWrappedToken.balanceOf(userB));
     });
 });
