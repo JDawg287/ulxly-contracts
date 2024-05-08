@@ -198,8 +198,6 @@ describe("PolygonZkEVMBridge Contract", () => {
         //////////// Bridge Mainnet to Rollup ////////////
 
         let merkleTreeMainnet = new MerkleTreeBridge(HEIGHT);
-        let totalAmountBridgeA: bigint = BigInt(0);
-
         let mainnetExitRootJS,
             mainnetExitRootSC,
             rollupExitRootJS,
@@ -240,9 +238,6 @@ describe("PolygonZkEVMBridge Contract", () => {
                 polygonZkEVMBridgeAContract,
                 acc1
             );
-
-            totalAmountBridgeA += AMOUNT;
-
             // simulate global exit root update for bridge B by updating the mainnet exit root manually
             await polygonZkEVMGlobalExitRootL2.connect(bridgeBAcc).updateExitRoot(mainnetExitRootJS, {gasPrice: 0});
         }
@@ -284,7 +279,6 @@ describe("PolygonZkEVMBridge Contract", () => {
         //////////// Bridge Rollup to Mainnet ////////////
 
         let merkleTreeRollupBridgeJS = new MerkleTreeBridge(HEIGHT);
-        let totalAmountBridgeB: bigint = 0n;
         let rollupExitRootBridgeBJS,
             rollupExitRootBridgeBSC = ethers.ZeroHash;
 
@@ -372,8 +366,6 @@ describe("PolygonZkEVMBridge Contract", () => {
                 polygonZkEVMBridgeBContract,
                 acc2
             );
-
-            totalAmountBridgeB += AMOUNT;
         }
         await printBridgeEvents(polygonZkEVMBridgeBContract, logs);
 
